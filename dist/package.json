@@ -1,0 +1,12 @@
+{
+  "name": "jl-energy-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --enable-source-maps ./dist/index.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
