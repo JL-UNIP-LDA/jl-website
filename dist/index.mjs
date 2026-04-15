@@ -56279,12 +56279,51 @@ var pool = new Pool3({ connectionString: process.env.DATABASE_URL });
 var db = drizzle(pool, { schema: schema_exports });
 
 // src/routes/contact.ts
+import nodemailer from "nodemailer";
 var router2 = (0, import_express2.Router)();
+var DEST_EMAIL = "geral@jlunipessoallda.eu";
+function createTransporter() {
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  if (!host || !user || !pass) return null;
+  return nodemailer.createTransport({
+    host,
+    port: parseInt(process.env.SMTP_PORT || "465"),
+    secure: process.env.SMTP_SECURE !== "false",
+    auth: { user, pass }
+  });
+}
 router2.post("/contact", async (req, res) => {
   try {
     const parsed = SubmitContactBody.parse(req.body);
     const validated = insertContactSchema.parse(parsed);
     await db.insert(contactsTable).values(validated);
+    const transporter = createTransporter();
+    if (transporter) {
+      try {
+        await transporter.sendMail({
+          from: `"JL Energy Website" <${process.env.SMTP_USER}>`,
+          to: DEST_EMAIL,
+          replyTo: parsed.email,
+          subject: `[Contacto] ${parsed.subject} \u2014 ${parsed.name}`,
+          html: `
+            <h2 style="color:#1e6bb8">Nova Mensagem de Contacto</h2>
+            <table style="border-collapse:collapse;width:100%;font-family:sans-serif;font-size:14px">
+              <tr><td style="padding:8px;font-weight:bold;width:140px">Nome</td><td style="padding:8px">${parsed.name}</td></tr>
+              <tr style="background:#f5f5f5"><td style="padding:8px;font-weight:bold">Email</td><td style="padding:8px"><a href="mailto:${parsed.email}">${parsed.email}</a></td></tr>
+              <tr><td style="padding:8px;font-weight:bold">Telefone</td><td style="padding:8px">${parsed.phone || "\u2014"}</td></tr>
+              <tr style="background:#f5f5f5"><td style="padding:8px;font-weight:bold">Assunto</td><td style="padding:8px">${parsed.subject}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold;vertical-align:top">Mensagem</td><td style="padding:8px;white-space:pre-wrap">${parsed.message}</td></tr>
+            </table>
+            <hr style="margin-top:24px"/>
+            <p style="color:#999;font-size:12px">Enviado via website jlunipessoallda.eu</p>
+          `
+        });
+      } catch (mailErr) {
+        req.log.warn({ mailErr }, "Email send failed but contact saved to DB");
+      }
+    }
     res.status(201).json({ success: true, message: "Mensagem enviada com sucesso!" });
   } catch (err) {
     req.log.error({ err }, "Failed to submit contact");
@@ -56296,6 +56335,44 @@ router2.post("/quote", async (req, res) => {
     const parsed = SubmitQuoteBody.parse(req.body);
     const validated = insertQuoteSchema.parse(parsed);
     await db.insert(quotesTable).values(validated);
+    const transporter = createTransporter();
+    if (transporter) {
+      try {
+        const serviceLabels = {
+          construcao: "Constru\xE7\xE3o Civil",
+          remodelacao: "Remodela\xE7\xE3o",
+          fotovoltaico: "Parques Fotovoltaicos",
+          eletricidade: "Instala\xE7\xF5es El\xE9tricas",
+          mao_de_obra: "M\xE3o-de-Obra",
+          limpeza: "Limpeza T\xE9cnica"
+        };
+        const serviceLabel = serviceLabels[parsed.service] || parsed.service;
+        await transporter.sendMail({
+          from: `"JL Energy Website" <${process.env.SMTP_USER}>`,
+          to: DEST_EMAIL,
+          replyTo: parsed.email,
+          subject: `[Or\xE7amento] ${serviceLabel} \u2014 ${parsed.name}`,
+          html: `
+            <h2 style="color:#1e6bb8">Novo Pedido de Or\xE7amento</h2>
+            <table style="border-collapse:collapse;width:100%;font-family:sans-serif;font-size:14px">
+              <tr><td style="padding:8px;font-weight:bold;width:160px">Nome</td><td style="padding:8px">${parsed.name}</td></tr>
+              <tr style="background:#f5f5f5"><td style="padding:8px;font-weight:bold">Empresa</td><td style="padding:8px">${parsed.company || "\u2014"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold">Email</td><td style="padding:8px"><a href="mailto:${parsed.email}">${parsed.email}</a></td></tr>
+              <tr style="background:#f5f5f5"><td style="padding:8px;font-weight:bold">Telefone</td><td style="padding:8px">${parsed.phone || "\u2014"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold">Servi\xE7o</td><td style="padding:8px">${serviceLabel}</td></tr>
+              <tr style="background:#f5f5f5"><td style="padding:8px;font-weight:bold">Localiza\xE7\xE3o</td><td style="padding:8px">${parsed.location || "\u2014"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold">Or\xE7amento Est.</td><td style="padding:8px">${parsed.budget || "\u2014"}</td></tr>
+              <tr style="background:#f5f5f5"><td style="padding:8px;font-weight:bold">Prazo</td><td style="padding:8px">${parsed.timeline || "\u2014"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold;vertical-align:top">Descri\xE7\xE3o</td><td style="padding:8px;white-space:pre-wrap">${parsed.description}</td></tr>
+            </table>
+            <hr style="margin-top:24px"/>
+            <p style="color:#999;font-size:12px">Enviado via website jlunipessoallda.eu</p>
+          `
+        });
+      } catch (mailErr) {
+        req.log.warn({ mailErr }, "Email send failed but quote saved to DB");
+      }
+    }
     res.status(201).json({ success: true, message: "Pedido de or\xE7amento enviado com sucesso!" });
   } catch (err) {
     req.log.error({ err }, "Failed to submit quote");
@@ -63481,63 +63558,53 @@ var openai2 = new OpenAI({
 
 // src/routes/ai.ts
 var router8 = (0, import_express8.Router)();
+var WHATSAPP_ADMIN = "https://wa.me/351910780549";
 var COMPANY_CONTEXT = `
-Voc\xEA \xE9 o Assistente Estrat\xE9gico JL Energy, consultor t\xE9cnico-comercial da JL ENERGY UNIPESSOAL LDA. Responda com precis\xE3o t\xE9cnica, forne\xE7a estimativas realistas e feche cada conversa direcionando para o WhatsApp.
+Voc\xEA \xE9 o Assistente JL Energy. Seja BREVE e DIRETO \u2014 m\xE1ximo 3 frases por resposta. Nunca elabore desnecessariamente. Sempre feche redirecionando para o WhatsApp.
 
 EMPRESA: JL Energy Unipessoal Lda | NIF: 518027384 | Alvar\xE1s: 148002-Pub / 111315-Par
 Morada: Pra\xE7a da Rep\xFAblica 310, 3\xBA Esq, S\xE3o Jo\xE3o da Madeira, Portugal
 Tel: +351 256 235 999 / +351 962 716 706 / +351 910 780 549 | Email: geral@jlunipessoallda.eu
-Diferencial: Capacidade de execu\xE7\xE3o europeia \u2014 equipas especializadas em Portugal, Espanha e toda a UE.
-Zona principal de atua\xE7\xE3o de limpeza: Porto, Aveiro e arredores.
-Projetos de refer\xEAncia: Burgos (ES), Brazatortas (ES), Espinho Edge, Aut\xF3dromo do Algarve, Universidade de Aveiro, Den Hoorn (NL).
-Compliance: envio mensal de Seguros AT, Responsabilidade Civil, ITA e Certid\xF5es de N\xE3o D\xEDvida.
+Zona de limpeza: Porto, Aveiro e arredores.
 
 SERVI\xC7OS:
-1. Constru\xE7\xE3o Civil: alvenaria, bet\xE3o armado, cofragens, estruturas met\xE1licas, telhados, coberturas, rebocos, drenagens, moradias de luxo, edif\xEDcios coletivos, obras p\xFAblicas e privadas.
-2. Remodela\xE7\xE3o e Reabilita\xE7\xE3o: Sistema Capoto (ETICS), isolamentos t\xE9rmicos/ac\xFAsticos, Pladur, pintura, pavimentos, cozinhas, casas de banho, carpintaria.
-3. Energias Renov\xE1veis e El\xE9trica: plantas fotovoltaicas industriais (ex: 124,934 MWp em Burgos), pain\xE9is solares residenciais, inversores, quadros el\xE9tricos, infraestruturas el\xE9tricas.
-4. Limpeza T\xE9cnica Profissional (Porto, Aveiro e arredores):
-   a) Limpeza P\xF3s-Obra (servi\xE7o INTENSIVO e PONTUAL): remo\xE7\xE3o de res\xEDduos de tinta/cimento/gesso, aspira\xE7\xE3o industrial, limpeza de vidros e caixilharias, desinfe\xE7\xE3o total, tratamento de pavimentos, remo\xE7\xE3o de pel\xEDculas de prote\xE7\xE3o. DIFERENCIAL: or\xE7amento baseado em fotos/v\xEDdeos enviados pelo cliente.
-   b) Manuten\xE7\xE3o de Condom\xEDnios e Edif\xEDcios (servi\xE7o RECORRENTE): limpeza de \xE1reas comuns, elevadores, pavimentos, garagens; gest\xE3o de res\xEDduos; frequ\xEAncia personaliz\xE1vel (di\xE1ria/semanal/mensal).
-   c) Limpeza Residencial Recorrente (servi\xE7o PERI\xD3DICO): limpeza programada, limpeza profunda de cozinhas, exteriores, pavimentos, janelas/persianas.
-   d) Higieniza\xE7\xE3o Especializada: sof\xE1s por inje\xE7\xE3o/extra\xE7\xE3o, persianas/estores, radiadores/climatiza\xE7\xE3o, colch\xF5es, carpetes/tapetes, pedras e m\xE1rmores.
+1. Constru\xE7\xE3o Civil: alvenaria, bet\xE3o armado, estruturas met\xE1licas, telhados, moradias, edif\xEDcios.
+2. Remodela\xE7\xE3o: Capoto/ETICS, Pladur, pintura, pavimentos, cozinhas, casas de banho.
+3. Energia & El\xE9trica: plantas fotovoltaicas industriais e residenciais, quadros el\xE9tricos.
+4. Limpeza T\xE9cnica (Porto/Aveiro):
+   a) P\xF3s-Obra (pontual): remo\xE7\xE3o res\xEDduos constru\xE7\xE3o, desinfe\xE7\xE3o, vidros.
+   b) Condom\xEDnios (recorrente): \xE1reas comuns, elevadores, garagens.
+   c) Residencial (peri\xF3dico): limpeza programada, profunda.
+   d) Higieniza\xE7\xE3o Especializada: sof\xE1s, colch\xF5es, carpetes, climatiza\xE7\xE3o.
 
-REGRA DE LIMPEZA \u2014 OR\xC7AMENTOS:
-- Para QUALQUER servi\xE7o de limpeza, \xE9 OBRIGAT\xD3RIO solicitar ao cliente fotos ou v\xEDdeos do espa\xE7o para fornecer um or\xE7amento preciso.
-- Explique sempre: "Para um or\xE7amento exato, pedimos que nos envie fotos ou v\xEDdeos via WhatsApp: https://wa.me/351962716706"
-- Distinguir claramente: Limpeza P\xF3s-Obra = servi\xE7o \xFAnico e intensivo; Manuten\xE7\xE3o de Condom\xEDnios/Residencial = servi\xE7o recorrente com contrato peri\xF3dico.
+REGRA DE LIMPEZA: Para qualquer or\xE7amento de limpeza, pedir SEMPRE fotos/v\xEDdeos via WhatsApp.
 
-PRE\xC7OS DE REFER\xCANCIA (fonte: Habitissimo + dados internos):
-- Constru\xE7\xE3o de moradia de raiz: 1.300\u20AC \u2013 1.500\u20AC/m\xB2
-- Remodela\xE7\xE3o de apartamento: 750\u20AC \u2013 900\u20AC/m\xB2
-- Pintura interior/exterior: 10\u20AC \u2013 30\u20AC/m\xB2
-- Sistema Capoto (ETICS): 50\u20AC \u2013 90\u20AC/m\xB2
-- Instala\xE7\xE3o fotovoltaica residencial: a partir de 1.800\u20AC
-- Instala\xE7\xE3o fotovoltaica industrial: or\xE7amento sob medida conforme MWp
-- M\xE3o-de-obra alvenaria: base 12,50\u20AC/m\xB2 ou unidade (sujeito a medi\xE7\xE3o e volume)
-- Limpeza p\xF3s-obra: or\xE7amento baseado em an\xE1lise visual (envio de fotos/v\xEDdeos obrigat\xF3rio)
-- Limpeza residencial recorrente: a partir de consulta personalizada por frequ\xEAncia e \xE1rea
-Nota: valores m\xE9dios de mercado; com equipas pr\xF3prias otimizamos custos em grandes volumes de obra.
+PRE\xC7OS REFER\xCANCIA:
+- Constru\xE7\xE3o moradia: 1.300\u20AC\u20131.500\u20AC/m\xB2
+- Remodela\xE7\xE3o: 750\u20AC\u2013900\u20AC/m\xB2
+- Pintura: 10\u20AC\u201330\u20AC/m\xB2
+- Capoto: 50\u20AC\u201390\u20AC/m\xB2
+- Fotovoltaico residencial: a partir de 1.800\u20AC
+- Fotovoltaico industrial: or\xE7amento sob medida
+- Limpeza: or\xE7amento baseado em fotos/v\xEDdeos
 
-COMPORTAMENTO DO AGENTE:
-- Para servi\xE7os de limpeza: recomenda sempre o servi\xE7o mais adequado ao caso do cliente, solicitando fotos/v\xEDdeos
-- Para constru\xE7\xE3o/remodela\xE7\xE3o: fornece estimativas t\xE9cnicas com base nos dados do cliente
-- Mant\xE9m coer\xEAncia no discurso comercial em todos os idiomas
-- Nunca inventa dados ou pre\xE7os sem base
+COMPORTAMENTO OBRIGAT\xD3RIO:
+- Resposta M\xC1XIMA: 3 frases curtas
+- N\xE3o dar explica\xE7\xF5es longas \u2014 apenas o essencial
+- Nunca inventar dados
+- SEMPRE terminar com o link WhatsApp ${WHATSAPP_ADMIN}
 
-FECHO OBRIGAT\xD3RIO: No final de cada resposta, adicione sempre (adaptado ao idioma):
-PT: "Dada a nossa capacidade de execu\xE7\xE3o europeia, podemos mobilizar equipas rapidamente. Para or\xE7amento detalhado, fale com o nosso gestor: https://wa.me/351962716706"
-ES: "Dada nuestra capacidad europea, podemos movilizar equipos r\xE1pidamente. Para presupuesto detallado: https://wa.me/351962716706"
-EN: "Given our European capacity, we can mobilise teams quickly. For a detailed quote: https://wa.me/351962716706"
-FR: "Gr\xE2ce \xE0 notre capacit\xE9 europ\xE9enne, nous pouvons mobiliser des \xE9quipes rapidement. Pour un devis: https://wa.me/351962716706"
-
-Seja profissional, confiante e objetivo. Nunca invente dados.
+FECHO OBRIGAT\xD3RIO (adaptar ao idioma, m\xE1ximo 1 frase):
+PT: "Para continuar, fale connosco pelo WhatsApp: ${WHATSAPP_ADMIN}"
+ES: "Para continuar, escr\xEDbanos por WhatsApp: ${WHATSAPP_ADMIN}"
+EN: "To continue, contact us on WhatsApp: ${WHATSAPP_ADMIN}"
+FR: "Pour continuer, contactez-nous sur WhatsApp: ${WHATSAPP_ADMIN}"
 `;
 router8.post("/ai/faq", async (req, res) => {
   try {
     const body = AskFaqBody.parse(req.body);
     const lang = body.lang ?? "pt";
-    const langInstruction = lang === "en" ? "Answer in English." : lang === "es" ? "Responde en espa\xF1ol." : lang === "fr" ? "R\xE9pondez en fran\xE7ais." : "Responda em portugu\xEAs de Portugal.";
+    const langInstruction = lang === "en" ? "Answer in English. Maximum 3 short sentences. End with the WhatsApp link." : lang === "es" ? "Responde en espa\xF1ol. M\xE1ximo 3 frases cortas. Termina con el link de WhatsApp." : lang === "fr" ? "R\xE9pondez en fran\xE7ais. Maximum 3 phrases courtes. Terminez avec le lien WhatsApp." : "Responda em portugu\xEAs de Portugal. M\xE1ximo 3 frases curtas. Termine com o link WhatsApp.";
     const completion = await openai.chat.completions.create({
       model: "gpt-5-mini",
       messages: [
@@ -63546,42 +63613,41 @@ router8.post("/ai/faq", async (req, res) => {
       ]
     });
     const rawContent = completion.choices[0]?.message?.content;
-    const answer = rawContent && rawContent.length > 0 ? rawContent : "N\xE3o foi poss\xEDvel obter uma resposta. Por favor contacte-nos diretamente.";
+    const answer = rawContent && rawContent.length > 0 ? rawContent : `N\xE3o foi poss\xEDvel obter uma resposta. Fale connosco: ${WHATSAPP_ADMIN}`;
     res.json({ answer, lang });
   } catch (err) {
     req.log.error({ err }, "Failed to process FAQ");
-    res.status(500).json({ answer: "Erro ao processar a pergunta. Por favor tente novamente ou contacte-nos diretamente.", lang: "pt" });
+    res.status(500).json({ answer: `Erro ao processar. Contacte-nos: ${WHATSAPP_ADMIN}`, lang: "pt" });
   }
 });
 router8.post("/ai/estimate", async (req, res) => {
   try {
     const body = EstimateBudgetBody.parse(req.body);
     const lang = body.lang ?? "pt";
-    const langInstruction = lang === "en" ? "Answer in English." : lang === "es" ? "Responde en espa\xF1ol." : lang === "fr" ? "R\xE9pondez en fran\xE7ais." : "Responda em portugu\xEAs de Portugal.";
-    const prompt = `O cliente precisa de uma estimativa para o seguinte projeto:
+    const langInstruction = lang === "en" ? "Answer in English. Maximum 3 short sentences with a rough price range. End with the WhatsApp link." : lang === "es" ? "Responde en espa\xF1ol. M\xE1ximo 3 frases cortas con rango de precio. Termina con WhatsApp." : lang === "fr" ? "R\xE9pondez en fran\xE7ais. Maximum 3 phrases avec fourchette de prix. Terminez avec WhatsApp." : "Responda em portugu\xEAs. M\xE1ximo 3 frases curtas com intervalo de pre\xE7o. Termine com WhatsApp.";
+    const prompt = `Estimativa para:
 - Servi\xE7o: ${body.service}
 - Descri\xE7\xE3o: ${body.description}
 - \xC1rea: ${body.area ? body.area + " m\xB2" : "n\xE3o especificada"}
 - Localiza\xE7\xE3o: ${body.location ?? "Portugal"}
-
-Forne\xE7a uma estimativa de or\xE7amento preliminar (em euros), com uma explica\xE7\xE3o detalhada dos fatores considerados. Inclua tamb\xE9m um disclaimer que esta \xE9 apenas uma estimativa indicativa e que ser\xE1 necess\xE1rio uma visita t\xE9cnica para um or\xE7amento definitivo.`;
+D\xEA apenas o intervalo de pre\xE7o indicativo e redirecione para WhatsApp. M\xE1ximo 3 frases.`;
     const completion = await openai.chat.completions.create({
       model: "gpt-5-mini",
       messages: [
-        { role: "system", content: COMPANY_CONTEXT + "\n" + langInstruction + "\nForne\xE7a estimativas de or\xE7amento realistas e detalhadas para projetos de constru\xE7\xE3o em Portugal." },
+        { role: "system", content: COMPANY_CONTEXT + "\n" + langInstruction },
         { role: "user", content: prompt }
       ]
     });
     const responseText = completion.choices[0]?.message?.content ?? "";
-    const estimate = responseText.split("\n")[0] ?? "Consulte-nos para obter um or\xE7amento personalizado";
+    const estimate = responseText.split("\n")[0] ?? "Consulte-nos para or\xE7amento personalizado";
     const breakdown = responseText;
-    const disclaimer = lang === "en" ? "This is a preliminary estimate only. A definitive quote requires a technical visit." : lang === "es" ? "Esta es solo una estimativa preliminar. Un presupuesto definitivo requiere una visita t\xE9cnica." : lang === "fr" ? "Il s'agit d'une estimation pr\xE9liminaire uniquement. Un devis d\xE9finitif n\xE9cessite une visite technique." : "Esta \xE9 apenas uma estimativa preliminar indicativa. Um or\xE7amento definitivo requer uma visita t\xE9cnica.";
+    const disclaimer = lang === "en" ? "Preliminary estimate only. Contact us on WhatsApp for a definitive quote." : lang === "es" ? "Solo estimativa preliminar. Cont\xE1ctenos por WhatsApp para un presupuesto definitivo." : lang === "fr" ? "Estimation pr\xE9liminaire. Contactez-nous sur WhatsApp pour un devis d\xE9finitif." : "Estimativa preliminar. Contacte-nos pelo WhatsApp para or\xE7amento definitivo.";
     res.json({ estimate, breakdown, disclaimer, lang });
   } catch (err) {
     req.log.error({ err }, "Failed to estimate budget");
     res.status(500).json({
-      estimate: "N\xE3o foi poss\xEDvel gerar uma estimativa automaticamente.",
-      disclaimer: "Por favor contacte-nos diretamente para um or\xE7amento personalizado.",
+      estimate: "N\xE3o foi poss\xEDvel gerar estimativa.",
+      disclaimer: `Contacte-nos: ${WHATSAPP_ADMIN}`,
       lang: "pt"
     });
   }
