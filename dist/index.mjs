@@ -75473,6 +75473,42 @@ app.use(
 app.use((0, import_cors.default)());
 app.use(import_express11.default.json());
 app.use(import_express11.default.urlencoded({ extended: true }));
+// ---- SECURITY HOTFIX 2026-11-16 ----
+app.set("trust proxy", true);
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
+// Admin API had NO server-side auth: disabled until real auth exists.
+app.use("/api/admin", (_req, res) => { res.status(403).json({ error: "Forbidden" }); });
+// AI agent removed (unbounded OpenAI cost).
+app.use("/api/ai", (_req, res) => { res.status(410).json({ error: "Gone" }); });
+// Rate limit public form submissions: 5 per 10 min per IP.
+var __rlHits = new Map();
+setInterval(() => { const now = Date.now(); for (const [k, v] of __rlHits) if (now - v.t > 6e5) __rlHits.delete(k); }, 6e4).unref();
+app.use("/api", (req, res, next) => {
+  if (req.method !== "POST") return next();
+  const ip = req.headers["cf-connecting-ip"] || req.ip || "unknown";
+  const now = Date.now();
+  const e = __rlHits.get(ip);
+  if (!e || now - e.t > 6e5) { __rlHits.set(ip, { t: now, n: 1 }); return next(); }
+  if (++e.n > 5) { res.setHeader("Retry-After", "600"); return void res.status(429).json({ success: false, message: "Demasiados pedidos. Tente novamente mais tarde." }); }
+  next();
+});
+// Escape HTML in submitted strings (emails are built with raw interpolation).
+var __esc = (v) => typeof v === "string" ? v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]) : v;
+app.use("/api", (req, _res, next) => {
+  if (req.method === "POST" && req.body && typeof req.body === "object") {
+    for (const k of Object.keys(req.body)) req.body[k] = __esc(req.body[k]);
+  }
+  next();
+});
+// ---- END SECURITY HOTFIX ----
 app.use("/api", routes_default);
 if (process.env.NODE_ENV === "production") {
   const publicPath = path2.resolve(__dirname2, "public");
