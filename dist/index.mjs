@@ -18,18 +18,19 @@ const MIME = {
   '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.xml': 'application/xml; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff',
+  '.mp4': 'video/mp4', '.webm': 'video/webm',
 };
 const COMPRESSIBLE = new Set(['.html', '.css', '.js', '.json', '.webmanifest', '.xml', '.txt', '.svg']);
 
 // Rotas do site antigo (Replit) → novas rotas. Mantém o SEO acumulado.
 const REDIRECTS = {
   '/orcamento': '/contactos', '/orcamentos': '/contactos', '/clientes': '/projetos', '/internacional': '/mao-de-obra',
-  '/blog': '/projetos', '/admin': '/', '/index.html': '/',
+  '/blog': '/projetos', '/admin': '/', '/index.html': '/', '/limpeza-tecnica': '/remodelacoes',
 };
 
 const CSP = [
   "default-src 'self'", "script-src 'self' 'unsafe-inline'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data:",
-  "font-src 'self'", "connect-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", 'upgrade-insecure-requests',
+  "font-src 'self'", "connect-src 'self'", "frame-src https://www.openstreetmap.org", "media-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", 'upgrade-insecure-requests',
 ].join('; ');
 
 const SECURITY = {
@@ -59,6 +60,19 @@ function send(req, res, file, status = 200) {
   if (req.headers['if-modified-since'] && new Date(req.headers['if-modified-since']) >= new Date(file.mtime.toUTCString()) && status === 200) {
     res.writeHead(304, headers); return res.end();
   }
+  // Pedidos parciais (Range): obrigatório para vídeo no Safari/iOS.
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+  if (range && status === 200 && !COMPRESSIBLE.has(ext)) {
+    let start = range[1] === '' ? file.size - Number(range[2]) : Number(range[1]);
+    let end = range[1] !== '' && range[2] !== '' ? Number(range[2]) : file.size - 1;
+    if (start < 0) start = 0;
+    end = Math.min(end, file.size - 1);
+    if (start > end || start >= file.size) { res.writeHead(416, { 'Content-Range': `bytes */${file.size}` }); return res.end(); }
+    res.writeHead(206, { ...headers, 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${file.size}`, 'Content-Length': end - start + 1 });
+    if (req.method === 'HEAD') return res.end();
+    return createReadStream(file.full, { start, end }).pipe(res);
+  }
+  headers['Accept-Ranges'] = 'bytes';
   const ae = String(req.headers['accept-encoding'] || '');
   let stream = createReadStream(file.full);
   if (COMPRESSIBLE.has(ext) && file.size > 1024) {
