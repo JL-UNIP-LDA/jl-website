@@ -1,26 +1,12 @@
-# JL Energy Website — Render Deployment
+# JL Energy — website de produção
 
-## Como fazer deploy no Render
+Build estático (Astro) servido por um servidor Node sem dependências (`dist/index.mjs`).
+O código-fonte vive no repositório de desenvolvimento (`web/`); este repositório recebe apenas o build.
 
-### 1. Sube esta pasta para GitHub
-```bash
-git init
-git add .
-git commit -m "JL Energy website production build"
-git remote add origin https://github.com/SEU-USER/SEU-REPO.git
-git push -u origin main
-```
+- Início: `node dist/index.mjs` (Render: Start Command já configurado)
+- Health check: `/healthz`
+- Leads: todos os CTAs abrem o WhatsApp +351 910 780 549 com mensagem pré-preenchida. O site não recolhe nem guarda dados pessoais.
+- Rotas antigas (`/orcamento`, `/clientes`, `/internacional`, `/blog`, `/admin`) redirecionam com 301.
+- A antiga API (`/api/*`) responde 410 Gone.
 
-### 2. Cria serviço no Render
-- Vai a https://render.com → New → Web Service
-- Conecta o teu repositório GitHub
-- **Build Command:** (deixa vazio ou: `echo ok`)
-- **Start Command:** `node --enable-source-maps ./dist/index.mjs`
-- **Environment:** Node
-
-### 3. Adiciona variáveis de ambiente
-Copia as variáveis do ficheiro `.env.example` para o dashboard do Render.
-**IMPORTANTE:** O Render define PORT automaticamente — não o adiciones.
-
-### 4. Deploy
-Clica em "Create Web Service" e aguarda o deploy (2-3 minutos).
+Para atualizar: no repositório de desenvolvimento, `web/scripts/package-render.sh <caminho deste repo>`, commit e push.
